@@ -1,6 +1,6 @@
 # Ziward Frontend Template
 
-TanStack Start, Cloudflare Workers, R2, Supabase SSR, TanStack Query/Form, Zustand, shadcn/ui Base UI, Tailwind CSS v4, Zod, Biome를 기본으로 쓰는 frontend template입니다.
+TanStack Start, Cloudflare Workers, R2, Supabase SSR, Tauri v2, TanStack Query/Form, Zustand, shadcn/ui Base UI, Tailwind CSS v4, Zod, Biome를 기본으로 쓰는 frontend template입니다.
 
 ## Dependency Policy
 
@@ -12,13 +12,14 @@ TanStack Start, Cloudflare Workers, R2, Supabase SSR, TanStack Query/Form, Zusta
 - test를 위한 dependency와 script는 기본 template에 넣지 않습니다.
 - lint/format/import organize는 Biome 하나로 통일합니다. ESLint와 Prettier는 기본 template에서 제거합니다.
 - Cloudflare Workers runtime에서는 AWS S3 SDK를 쓰지 않고 R2 bucket binding을 사용합니다.
+- Tauri desktop target은 Mac/Windows package를 기준으로 두고, Cloudflare SSR build와 분리된 Vite SPA build를 사용합니다.
 
 ## Confirmed Dependencies
 
 ### Core
 
 ```sh
-pnpm add @tanstack/react-query @tanstack/react-form zod zustand @supabase/supabase-js @supabase/ssr
+pnpm add @tanstack/react-query @tanstack/react-form zod zustand @supabase/supabase-js @supabase/ssr use-sync-external-store
 ```
 
 `shadcn init`과 TanStack Start scaffold가 만드는 framework/UI dependency는 유지합니다.
@@ -40,6 +41,8 @@ pnpm add @tanstack/react-query @tanstack/react-form zod zustand @supabase/supaba
 - `tw-animate-css`
 - `shadcn`
 - `vite-tsconfig-paths`
+- `@tauri-apps/api`
+- `use-sync-external-store`
 
 ### Cloudflare
 
@@ -48,6 +51,30 @@ pnpm add -D @cloudflare/vite-plugin wrangler
 ```
 
 Cloudflare Workers deploy target은 `wrangler`와 `@cloudflare/vite-plugin`을 사용합니다. R2는 `wrangler.jsonc`의 `r2_buckets` binding으로 연결하고 application code에서는 binding으로 받은 `R2Bucket` API를 사용합니다.
+
+### Tauri
+
+```sh
+pnpm add @tauri-apps/api
+pnpm add -D @tauri-apps/cli
+```
+
+Tauri v2 desktop target은 `src-tauri`에 둡니다. `pnpm run build`는 Cloudflare/TanStack Start RSC build로 유지하고, Tauri bundle에 들어가는 static frontend는 `pnpm run build:tauri-frontend`가 `vite.tauri.config.ts`로 `dist/tauri`에 생성합니다.
+
+개발 중에는 dev server를 별도로 실행한 뒤 Tauri를 실행합니다.
+
+```sh
+pnpm run dev
+pnpm run tauri:dev
+```
+
+desktop bundle은 각 OS에서 빌드합니다.
+
+```sh
+pnpm run tauri:build
+```
+
+Mac bundle에는 `icon.icns`, Windows bundle에는 `icon.ico`와 Windows AppX icon set을 사용합니다.
 
 ### Tooling
 
@@ -62,9 +89,12 @@ pnpm add -D @biomejs/biome typescript vite @vitejs/plugin-react @vitejs/plugin-r
   "scripts": {
     "dev": "vite dev --port 3000",
     "build": "vite build",
+    "build:tauri-frontend": "vite build --config vite.tauri.config.ts",
     "preview": "vite preview",
     "deploy": "pnpm run build && wrangler deploy",
     "cf-typegen": "wrangler types",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
     "check": "pnpm run typecheck && pnpm run lint",
     "lint": "biome check . --write --unsafe",
     "format": "biome format . --write",
@@ -245,7 +275,7 @@ Cloudflare TanStack Start guide 기준 적용 상태입니다.
 | Vite plugin | `tanstackStart()`와 React, `nitro()` 중심 | `cloudflare({ viteEnvironment: { name: "ssr" } })`와 `rsc()`를 추가하고 `nitro()` 제거 |
 | Wrangler config | 없음 | `wrangler.jsonc` 추가, `main`은 `@tanstack/react-start/server-entry` |
 | Compatibility | 없음 | `compatibility_date`, `nodejs_compat`, `observability.enabled` 설정 |
-| Scripts | `dev`, `build`, `preview` 중심 | `deploy`, `cf-typegen` 추가 |
+| Scripts | `dev`, `build`, `preview` 중심 | `deploy`, `cf-typegen`, `build:tauri-frontend`, `tauri:dev`, `tauri:build` 추가 |
 | R2 binding | 없음 | `R2_BUCKET` binding 추가, `worker-configuration.d.ts` 생성 |
 | Env variables | README의 rough env 이름만 있음 | deploy에 적용되는 `vars`, `wrangler secret put`, `--secrets-file` 예시 추가 |
 
@@ -283,3 +313,5 @@ Nitro는 TanStack CLI 기준으로 “Generic Nitro adapter”입니다. Cloudfl
 - [Cloudflare R2 Workers API](https://developers.cloudflare.com/r2/get-started/workers-api/)
 - [Supabase SSR Auth](https://supabase.com/docs/guides/auth/server-side)
 - [TanStack Start environment variables](https://tanstack.com/start/latest/docs/framework/react/guide/environment-variables)
+- [Tauri v2 configuration](https://v2.tauri.app/reference/config/)
+- [Tauri v2 prerequisites](https://v2.tauri.app/start/prerequisites/)

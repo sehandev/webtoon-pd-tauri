@@ -12,7 +12,9 @@
       "!worker-configuration.d.ts",
       "!dist",
       "!.tanstack",
-      "!.wrangler"
+      "!.wrangler",
+      "!src-tauri/target",
+      "!src-tauri/gen"
     ]
   },
   "linter": {
