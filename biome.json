@@ -14,7 +14,11 @@
       "!.tanstack",
       "!.wrangler",
       "!src-tauri/target",
-      "!src-tauri/gen"
+      "!src-tauri/gen",
+      "!src-tauri/sidecars/**/.venv",
+      "!src-tauri/sidecars/**/.ruff_cache",
+      "!src-tauri/sidecars/**/build",
+      "!src-tauri/sidecars/**/dist"
     ]
   },
   "linter": {

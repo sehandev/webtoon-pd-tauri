@@ -1,0 +1,28 @@
+[project]
+name = "webtoon-pd-image-renderer"
+version = "0.1.0"
+description = "Render webtoon source files into PNG tiles for the Tauri AVIF pipeline."
+requires-python = ">=3.12"
+dependencies = [
+  "numpy>=2.3.0",
+  "pillow>=12.0.0",
+  "psd-tools[composite]>=1.12.0",
+]
+
+[project.scripts]
+webtoon-pd-image-renderer = "image_renderer:main"
+
+[dependency-groups]
+dev = [
+  "pyinstaller>=6.20.0",
+  "ruff>=0.14.0",
+  "ty>=0.0.1a0",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ty]
