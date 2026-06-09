@@ -2,6 +2,166 @@
 
 TanStack Start, Cloudflare Workers, R2, Supabase SSR, Tauri v2, TanStack Query/Form, Zustand, shadcn/ui Base UI, Tailwind CSS v4, Zod, Biome를 기본으로 쓰는 frontend template입니다.
 
+## Webtoon PD MVP 실행 가이드
+
+이 MVP는 Tauri App에서 원본 파일을 선택하고, local renderer와 `avifenc`로 AVIF tile을 만든 뒤, Worker가 발급한 R2 presigned URL과 Supabase RPC로 업로드 결과를 finalize하는 구조입니다.
+
+지원 입력 파일은 `.clip`, `.psd`, `.psb`, `.jpg`, `.jpeg`, `.png`, `.webp`, `.avif`입니다. Tile 규격은 width 최대 `2048px`, tile height `2048px`, AVIF encode option은 lossless 4:4:4입니다.
+
+### 공통 준비
+
+```sh
+pnpm install
+uv sync --project src-tauri/sidecars/image-renderer
+```
+
+`avifenc`는 `libavif`에 포함된 CLI가 필요합니다. macOS Homebrew 기준 설치 예시는 다음과 같습니다.
+
+```sh
+brew install libavif
+```
+
+`.clip` 변환을 사용하려면 CLIP to PSD/PSB converter가 별도로 필요합니다. converter가 없으면 `.clip` 입력은 `manual_export_required` error로 실패합니다.
+
+```sh
+export WEBTOON_PD_CLIP_TO_PSD=/absolute/path/to/clip_to_psd.py
+```
+
+### App 입력값
+
+App 왼쪽 panel에는 backend와 workspace 값을 넣습니다.
+
+| Field | 설명 |
+| --- | --- |
+| Worker URL | R2 presigned URL을 발급하는 Worker origin. 예: `https://example.workers.dev` |
+| Supabase URL | Supabase project URL |
+| Supabase anon key | Supabase anon public key |
+| Access token | 현재 로그인한 사용자의 Supabase access token |
+| Organization ID | 업로드가 속한 organization id |
+| Project ID | 작품 id |
+| Episode ID | 화수 id |
+| Stage ID | 과정 id |
+| User ID | 업로드/변환을 실행하는 사용자 id |
+| Renderer bin | 선택값. image renderer 실행 파일 또는 script absolute path |
+| avifenc bin | 선택값. `avifenc` absolute path |
+
+Tool path 탐색 우선순위는 `App 입력값` → `환경변수` → `app resource/binaries` → `PATH`입니다.
+
+| Tool | 환경변수 | 기본 PATH 이름 |
+| --- | --- | --- |
+| image renderer | `WEBTOON_PD_IMAGE_RENDERER_BIN` | `image-renderer` |
+| AVIF encoder | `WEBTOON_PD_AVIFENC_BIN` | `avifenc` |
+| CLIP converter | `WEBTOON_PD_CLIP_TO_PSD` | `clip_to_psd.py` 또는 `clip_to_psd` |
+
+Python renderer를 dev에서 그대로 쓰려면 `uv run` wrapper를 만들고 `Renderer bin` 또는 `WEBTOON_PD_IMAGE_RENDERER_BIN`에 wrapper path를 넣습니다. `Renderer bin`에 `.py` file을 직접 넣으면 app은 `python3 <script.py>`로 실행하므로 해당 `python3` 환경에 `Pillow`, `psd-tools`, `pillow-avif-plugin`이 설치되어 있어야 합니다.
+
+```sh
+PROJECT_ROOT="$(pwd)"
+cat > /tmp/webtoon-pd-image-renderer <<SH
+#!/bin/sh
+exec uv run --project "$PROJECT_ROOT/src-tauri/sidecars/image-renderer" python "$PROJECT_ROOT/src-tauri/sidecars/image-renderer/image_renderer.py" "\$@"
+SH
+chmod +x /tmp/webtoon-pd-image-renderer
+export WEBTOON_PD_IMAGE_RENDERER_BIN=/tmp/webtoon-pd-image-renderer
+```
+
+### Dev 실행
+
+Tauri dev는 `src-tauri/tauri.conf.json`의 `devUrl`인 `http://localhost:3000`을 사용합니다. `beforeDevCommand`가 `pnpm run dev`로 설정되어 있으므로 `pnpm run tauri:dev`만 실행하면 Vite dev server와 Tauri App이 함께 실행됩니다.
+
+```sh
+WEBTOON_PD_IMAGE_RENDERER_BIN=/tmp/webtoon-pd-image-renderer \
+WEBTOON_PD_AVIFENC_BIN=/opt/homebrew/bin/avifenc \
+pnpm run tauri:dev
+```
+
+Dev server 없이 static frontend만 확인하려면 Tauri용 frontend build를 만들 수 있습니다.
+
+```sh
+pnpm run build:tauri-frontend
+```
+
+Python renderer만 standalone으로 확인하려면 sample 입력 파일을 넣어 manifest와 PNG tile을 생성합니다.
+
+```sh
+uv run --project src-tauri/sidecars/image-renderer python src-tauri/sidecars/image-renderer/image_renderer.py \
+  --input /absolute/path/source.png \
+  --output-dir /tmp/webtoon-rendered \
+  --max-width 2048 \
+  --tile-height 2048 \
+  --manifest /tmp/webtoon-rendered/manifest.json
+```
+
+### Prod 실행
+
+배포용 desktop bundle은 OS별 machine에서 빌드합니다.
+
+```sh
+pnpm run tauri:build
+```
+
+macOS bundle을 직접 실행하는 예시는 다음과 같습니다.
+
+```sh
+open "src-tauri/target/release/bundle/macos/Ziward Frontend Template.app"
+```
+
+Bundle packaging 없이 release binary smoke test만 하려면 다음 command를 사용합니다.
+
+```sh
+pnpm exec tauri build --no-bundle
+./src-tauri/target/release/ziward-frontend-template
+```
+
+Production에서 `.app`을 Finder나 `open`으로 실행하면 shell 환경변수가 전달되지 않을 수 있습니다. 이 경우 App의 `Renderer bin`, `avifenc bin` field에 absolute path를 넣거나, sidecar binary를 app resource에 포함해야 합니다. 현재 Rust code는 app resource directory의 `binaries/image-renderer-<target-triple>`, `binaries/image-renderer`, `binaries/avifenc-<target-triple>`, `binaries/avifenc`를 찾습니다. 실제 distribution에 포함하려면 `src-tauri/tauri.conf.json`의 bundle resource 또는 external binary 설정을 추가해야 합니다.
+
+Cloudflare Workers API를 배포해야 실제 R2 presigned URL 발급이 가능합니다.
+
+```sh
+pnpm run deploy
+```
+
+### Backend Contract
+
+Tauri App이 기대하는 Worker/Supabase contract는 다음과 같습니다.
+
+| 구분 | Endpoint |
+| --- | --- |
+| R2 upload URL 발급 | `POST {Worker URL}/api/r2/presigned-put-urls` |
+| Asset finalize | `POST {Supabase URL}/rest/v1/rpc/finalize_asset_processing` |
+| WYSIWYG 저장 | `POST {Supabase URL}/rest/v1/rpc/upsert_wysiwyg_document` |
+| WYSIWYG 조회 | `GET {Supabase URL}/rest/v1/wysiwyg_documents?stage_id=eq.<Stage ID>` |
+
+`POST /api/r2/presigned-put-urls` 요청은 Supabase access token을 `Authorization: Bearer <token>`으로 보내고, body는 다음 shape를 사용합니다.
+
+```json
+{
+  "objects": [
+    {
+      "key": "originals/example.png",
+      "contentType": "image/png",
+      "sizeBytes": 1234
+    }
+  ]
+}
+```
+
+응답은 object별 `url`과 선택적인 `headers`를 반환해야 합니다.
+
+```json
+{
+  "urls": [
+    {
+      "key": "originals/example.png",
+      "url": "https://...",
+      "headers": {}
+    }
+  ]
+}
+```
+
+업로드 전 변환 실패는 Supabase나 local state에 기록하지 않습니다. 원본과 AVIF tile upload가 끝난 뒤 `finalize_asset_processing` RPC를 호출합니다.
+
 ## Dependency Policy
 
 - package manager는 `pnpm`만 사용합니다.
@@ -59,20 +219,7 @@ pnpm add @tauri-apps/api
 pnpm add -D @tauri-apps/cli
 ```
 
-Tauri v2 desktop target은 `src-tauri`에 둡니다. `pnpm run build`는 Cloudflare/TanStack Start RSC build로 유지하고, Tauri bundle에 들어가는 static frontend는 `pnpm run build:tauri-frontend`가 `vite.tauri.config.ts`로 `dist/tauri`에 생성합니다.
-
-개발 중에는 dev server를 별도로 실행한 뒤 Tauri를 실행합니다.
-
-```sh
-pnpm run dev
-pnpm run tauri:dev
-```
-
-desktop bundle은 각 OS에서 빌드합니다.
-
-```sh
-pnpm run tauri:build
-```
+Tauri v2 desktop target은 `src-tauri`에 둡니다. `pnpm run build`는 Cloudflare/TanStack Start RSC build로 유지하고, Tauri bundle에 들어가는 static frontend는 `pnpm run build:tauri-frontend`가 `vite.tauri.config.ts`로 `dist/tauri`에 생성합니다. Dev/prod 실행 command와 변환 tool option은 `Webtoon PD MVP 실행 가이드`를 따릅니다.
 
 Mac bundle에는 `icon.icns`, Windows bundle에는 `icon.ico`와 Windows AppX icon set을 사용합니다.
 

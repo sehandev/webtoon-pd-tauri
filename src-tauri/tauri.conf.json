@@ -5,6 +5,7 @@
   "identifier": "com.ziward.frontend.template",
   "build": {
     "devUrl": "http://localhost:3000",
+    "beforeDevCommand": "pnpm run dev",
     "beforeBuildCommand": "pnpm run build:tauri-frontend",
     "frontendDist": "../dist/tauri"
   },
